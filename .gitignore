@@ -1,0 +1,11 @@
+.tmp_versions
+.*.cmd
+.*.sw?
+Module.symvers
+modules.order
+*.ko
+*.o
+*.mod.c
+test/vtty_test
+test/pty_test
+test/portmirror
