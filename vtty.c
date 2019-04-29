@@ -56,7 +56,7 @@ struct vtty_port {
 
 	unsigned int modem_state;
 
-	wait_queue_head_t read_wait, write_wait, mi_wait; // read/write from vtmx perspective
+	wait_queue_head_t read_wait, write_wait; // read/write from vtmx perspective
 	wait_queue_head_t oob_wait; // vtty-side ioctl => vtmx-side read
 };
 static struct vtty_port ports[VTTY_MAX];
@@ -242,61 +242,6 @@ static int vtty_tiocmset(struct tty_struct *tty, unsigned int set, unsigned int 
 	return ret;
 }
 
-// Sorry, this ioctl is - by design - next to useless.
-//
-// First, it is not possible to convert it to poll/select
-// Second, it's susceptible to race conditions. The interesting modem lines
-// may change between TIOCMGET and TIOCMIWAIT calls, leaving the caller with
-// an infinite wait.
-//
-// See a 12-year old thread
-// https://linux-serial.vger.kernel.narkive.com/wKd7uZgP/new-ioctl-for-modem-control-lines-monitoring#post1
-//
-static int vtty_tiocmiwait(struct tty_struct *tty, unsigned long arg)
-{
-	struct vtty_port *port = &ports[tty->index];
-	unsigned long flags;
-	int ret = 0;
-	unsigned int old_state;
-	DEFINE_WAIT(wait);
-	spin_lock_irqsave(&port->port.lock, flags);
-	old_state = port->modem_state;
-
-	for(;;) {
-		if((port->modem_state ^ old_state) & arg)
-			break;
-
-		if (signal_pending(current)) {
-			ret = -ERESTARTSYS;
-			break;
-		}
-	
-		prepare_to_wait(&port->mi_wait, &wait, TASK_INTERRUPTIBLE);
-		spin_unlock_irqrestore(&port->port.lock, flags);
-		schedule();
-		finish_wait(&port->mi_wait, &wait);
-		spin_lock_irqsave(&port->port.lock, flags);
-
-	}
-
-	spin_unlock_irqrestore(&port->port.lock, flags);
-	return ret;
-}
-
-static int vtty_ioctl(struct tty_struct *tty, unsigned int cmd, unsigned long arg)
-{
-	if(cmd == TIOCMIWAIT) {
-		return vtty_tiocmiwait(tty, arg);
-	} 
-
-	return -ENOIOCTLCMD;
-}
-	
-static int vtty_get_icount(struct tty_struct *tty, struct serial_icounter_struct *icount)
-{
-	return -EINVAL;
-}
-	
 static int vtty_break_ctl(struct tty_struct *tty, int state)
 {
 	struct vtty_port *port = &ports[tty->index];
@@ -318,8 +263,6 @@ static const struct tty_operations vtty_ops = {
 	.unthrottle = vtty_unthrottle,
 	.tiocmget = vtty_tiocmget,
 	.tiocmset = vtty_tiocmset,
-	.ioctl = vtty_ioctl,
-	.get_icount = vtty_get_icount,
 	.break_ctl = vtty_break_ctl,
 };
 
@@ -351,7 +294,6 @@ static int vtty_create_port(int index)
 
 	init_waitqueue_head(&port->read_wait);
 	init_waitqueue_head(&port->write_wait);
-	init_waitqueue_head(&port->mi_wait);
 	init_waitqueue_head(&port->oob_wait);
 	port->dev = dev;
 	return 0;
@@ -682,11 +624,6 @@ static int vtty_modem_state_set(struct vtty_port *port, unsigned int __user *arg
 	unsigned int mstate;
 	spin_lock_irqsave(&port->port.lock, flags);
 	ret = get_user(mstate, arg);
-	if(!ret) {
-		// FIXME handle dcd change?
-		wake_up_interruptible_sync(&port->mi_wait);
-	}
-
 	spin_unlock_irqrestore(&port->port.lock, flags);
 	return ret;
 }
