@@ -115,7 +115,7 @@ static int vtty_write(struct tty_struct *tty, const unsigned char *buf, int coun
 	wake_up_interruptible_sync_poll(&port->read_wait, POLLIN | POLLRDNORM);
 	spin_unlock_irqrestore(&port->port.lock, flags);
 	
-	printk("Written %d (cste=%d)\n", ret, CIRC_SPACE_TO_END(circ->head, circ->tail, VTTY_XMIT_SIZE));
+	pr_debug("Written %d (cste=%d)\n", ret, CIRC_SPACE_TO_END(circ->head, circ->tail, VTTY_XMIT_SIZE));
 	return ret;
 }
 
@@ -129,7 +129,7 @@ static int vtty_write_room(struct tty_struct *tty)
 	spin_lock_irqsave(&port->port.lock, flags);
 	ret = vtty_circ_chars_free(circ);
 	spin_unlock_irqrestore(&port->port.lock, flags);
-	printk("Write room = %d\n", ret);
+	pr_debug("Write room = %d\n", ret);
 	return ret;
 }
 
@@ -197,14 +197,14 @@ static void vtty_set_termios(struct tty_struct *tty, struct ktermios *old_termio
 
 static void vtty_throttle(struct tty_struct *tty)
 {
-	printk("throttle!\n");
+	pr_debug("throttle!\n");
 
 }
 
 static void vtty_unthrottle(struct tty_struct *tty)
 {
 	struct vtty_port *port = &ports[tty->index];
-	printk("unthrottle\n");
+	pr_debug("unthrottle\n");
 	wake_up_interruptible_sync_poll(&port->write_wait, POLLOUT | POLLWRNORM);
 	set_bit(TTY_THROTTLED, &tty->flags); 	// just like pty_unthrottle
 }
@@ -231,7 +231,7 @@ static int vtty_tiocmset(struct tty_struct *tty, unsigned int set, unsigned int 
 
 	if(ret == 0) {
 		port->modem_state = (port->modem_state | set) & (~clear);
-		printk("new modem state %x (%x %x)\n", port->modem_state, set, clear);
+		pr_debug("new modem state %x (%x %x)\n", port->modem_state, set, clear);
 		vtty_do_queue_oob(port, TAG_SET_MODEM, &port->modem_state, sizeof(port->modem_state));
 	}
 
@@ -459,16 +459,16 @@ static ssize_t vtmx_read (struct file *filp, char __user *ptr, size_t size, loff
 		goto out;
 	}
 #endif
-	printk("read(%d)\n", (int)size);
+	pr_debug("read(%d)\n", (int)size);
 	while(size > 0) {
 		int c;
-		printk("(size=%d ret=%d)\n", (int)size, (int)ret);
+		pr_debug("(size=%d ret=%d)\n", (int)size, (int)ret);
 		if(ret == 0) {
 			// oob
 			if(port->oob_size > 0) {
 				char tag = (char)port->oob_tag;
 				int copystatus;
-				printk("-> oob %d\n", tag);
+				pr_debug("-> oob %d\n", tag);
 				if(copy_to_user(ptr, &tag, 1)) {
 					ret = -EFAULT;
 					break;
@@ -499,7 +499,7 @@ static ssize_t vtmx_read (struct file *filp, char __user *ptr, size_t size, loff
 
 		// normal data, or wait for events
 		c = CIRC_CNT_TO_END(circ->head, circ->tail, VTTY_XMIT_SIZE);
-		printk("-> circ=%d\n", c);
+		pr_debug("-> circ=%d\n", c);
 
 		if(c == 0) {
 			if(ret > 0)
@@ -556,10 +556,10 @@ static ssize_t vtmx_read (struct file *filp, char __user *ptr, size_t size, loff
 	mutex_lock(&portlock);
 	if (vtty_circ_chars_pending(circ) < WAKEUP_CHARS) {
 		if(port->tty) {
-			printk("tty_wakeup\n");
+			pr_debug("tty_wakeup\n");
 			tty_wakeup(port->tty);
 		} else
-			printk("no tty_wakeup\n");
+			pr_debug("no tty_wakeup\n");
 	}
 	
 	mutex_unlock(&portlock);
@@ -627,7 +627,7 @@ static ssize_t vtmx_write (struct file *filp, const char __user *ptr, size_t siz
 	ssize_t written = 0;
 	int ret = 0;
 	DEFINE_WAIT(wait);
-	printk("enter vtmx_write (%d %d)\n", (int)size, (int)tty_buffer_space_avail(&port->port));
+	pr_debug("enter vtmx_write (%d %d)\n", (int)size, (int)tty_buffer_space_avail(&port->port));
 
 	while(size > 0) {
 		size_t tmp_size = size;
@@ -644,7 +644,7 @@ static ssize_t vtmx_write (struct file *filp, const char __user *ptr, size_t siz
 
 		if(0 && test_bit(TTY_THROTTLED, &port->tty->flags)) {
 			// required for consistency with poll(), but even the tty layer doesn't follow this
-			printk("vtmx write throttled\n");
+			pr_debug("vtmx write throttled\n");
 			tmp_size = 0;
 		} else {
 			tmp_size = tty_insert_flip_string(&port->port, temp_buffer, tmp_size);
@@ -652,7 +652,7 @@ static ssize_t vtmx_write (struct file *filp, const char __user *ptr, size_t siz
 				// ldisc driver will throttle us soon, but not now
 				// we must immediately mark the port as throttled
 				// so that poll() works properly
-				printk("vtmx write buffer space %d, self-throttling\n", tty_buffer_space_avail(&port->port));
+				pr_debug("vtmx write buffer space %d, self-throttling\n", tty_buffer_space_avail(&port->port));
 				set_bit(TTY_THROTTLED, &port->tty->flags); // FIXME
 			}
 		}
@@ -689,7 +689,7 @@ static ssize_t vtmx_write (struct file *filp, const char __user *ptr, size_t siz
 	if(written > 0)
 		tty_flip_buffer_push(&port->port);
 
-	printk("leave vtmx_write %d %d %d\n", (int)written, (int)ret, (int)tty_buffer_space_avail(&port->port));
+	pr_debug("leave vtmx_write %d %d %d\n", (int)written, (int)ret, (int)tty_buffer_space_avail(&port->port));
 	if(ret)
 		return ret;
 
@@ -720,7 +720,7 @@ static unsigned int vtmx_poll(struct file *filp, poll_table *wait)
 	if(tty_buffer_space_avail(&port->port) > 0) 
 		mask |= POLLOUT | POLLWRNORM;
 
-	printk("poll() (%d, %d) return %x\n", (int)CIRC_CNT_TO_END(circ->head, circ->tail, VTTY_XMIT_SIZE), (int)port->oob_size, (int)mask);
+	pr_debug("poll() (%d, %d) return %x\n", (int)CIRC_CNT_TO_END(circ->head, circ->tail, VTTY_XMIT_SIZE), (int)port->oob_size, (int)mask);
 	spin_unlock_irqrestore(&port->port.lock, flags);
 
 	return mask;
