@@ -68,7 +68,10 @@ static int vtty_open(struct tty_struct *tty, struct file *filp)
 	mutex_lock(&portlock);
 	if(vtty->dev) {
 		vtty->tty = tty;
-		set_bit(TTY_THROTTLED, &tty->flags); 	// just like pty_open
+		// just like pty_open, we keep the tty in the THROTTLED state permanently
+		// this will cause the ldisc layer to call vtty_unthrottle whenever the
+		// free space is above the watermark
+		set_bit(TTY_THROTTLED, &tty->flags);
 
 	} else {
 		// race between vtmx_release() & vtty_open()
@@ -567,59 +570,6 @@ static ssize_t vtmx_read (struct file *filp, char __user *ptr, size_t size, loff
 	return ret;
 }
 
-// pty write:
-// tty_write
-// 	do_tty_write
-// 		n_tty_write <- blocking happens at this level
-// 			if driver write (pty_write) returns 0
-// 			regardless of throttle status
-//
-// 			so in theory, write could be possible after select(write) returns false?
-//
-// 			pty_write
-// 				tty_insert_flip_string
-//
-// 			wait_woken
-// 				(pty special case: woken via n_tty_check_unthrottle in n_tty_read)
-// 				(woken via tty_wakeup, tty_write_unlock at the end of do_tty_write)
-//
-// tty_poll
-// 	n_tty_poll
-// 		marks POLLOUT if all of the following are true:
-// 		! tty_is_writelocked (not interesting?)
-// 		tty_chars_in_buffer < WAKEUP_CHARS (result varies by serial driver)
-//			pty_chars_in_buffer returns 0
-//			in non-pty cases, this state is signalled with tty_wakeup
-// 		tty_write_room > 0 (result varies by serial driver) <= THIS
-// 			pty_write_room returns tty_buffer_space_avail(link)
-//
-//
-// in serial drivers, tty_wakeup is normally called by tx isr when tx queue drops below WAKEUP_CHARS
-// in pty, tty_wakeup is called when the other side unthrottles
-//
-//
-// podsumowanie:
-// 	warstwa tty do pollout używa write_room > 0 && chars_in_buffer < WAKEUP_CHARS (tty_wakeup)
-// 	pty używa jako write_room tty_buffer_space_avail(link)
-// 		ta funkcja zwraca u nas 0 wcześniej niż bufory się faktycznie zatkają
-// 		i sporo wcześniej niż zrobi się throttle
-// 		dodatkowo ma hacka na to żeby unthrottle było wołane częściej niż zwykle i w ten sposób budzi waitqueue
-//
-// 	inne drivery serial *raczej* funkcjonują według chars_in_buffer i tty_wakeup
-// 		serial: write_room == 0 -> chars_in_buffer == sizeof(buffer) > WAKEUP_CHARS
-//
-// my wpychamy dane do tty i callbacka dostajemy tylko w formie throttle/unthrottle
-//
-// wariant 1:
-// 	poll() zwraca stan bitu throttle
-// 	write() musi samo natychmiast ustawiać ten bit jeśli write() się nie powiedzie, inaczej select() będzie kłamał
-// 		uwaga, problem z lockami
-//
-// wariant 2:
-// 	poll zwraca tty_buffer_space_avail(), co jest trochę konserwatywne, ale ok
-// 	na potrzeby budzenia musimy zrobić sztuczki z permanentnie ustawionym bitem throttle [jak pty]. czy to czegoś nie psuje?
-//
-
 static ssize_t vtmx_write (struct file *filp, const char __user *ptr, size_t size, loff_t *off)
 {
 	struct vtty_port *port = filp->private_data;
@@ -642,20 +592,20 @@ static ssize_t vtmx_write (struct file *filp, const char __user *ptr, size_t siz
 		if(tty_buffer_space_avail(&port->port) == 0)
 			tmp_size = 0;
 
-		if(0 && test_bit(TTY_THROTTLED, &port->tty->flags)) {
-			// required for consistency with poll(), but even the tty layer doesn't follow this
+		/*
+		if(test_bit(TTY_THROTTLED, &port->tty->flags)) {
+			// this would be required for consistency with poll(), but real ttys don't follow this
+			// this means that write() can succeed even if poll() claims that it wouldn't
 			pr_debug("vtmx write throttled\n");
 			tmp_size = 0;
-		} else {
-			tmp_size = tty_insert_flip_string(&port->port, temp_buffer, tmp_size);
-			if(tmp_size == 0 && 0) {
-				// ldisc driver will throttle us soon, but not now
-				// we must immediately mark the port as throttled
-				// so that poll() works properly
-				pr_debug("vtmx write buffer space %d, self-throttling\n", tty_buffer_space_avail(&port->port));
-				set_bit(TTY_THROTTLED, &port->tty->flags); // FIXME
-			}
-		}
+		} else */
+
+		tmp_size = tty_insert_flip_string(&port->port, temp_buffer, tmp_size);
+
+		// tty_insert_flip_string can return zero if the buffers are full
+		// however tty_buffer_space_avail will return zero much earlier, so poll() results will be
+		// somewhat consistent. Otherwise we would need to set a flag now so that poll() knows
+		// that the buffer space has really ran out.
 
 		if(tmp_size == 0) {
 			if(written > 0)
@@ -716,7 +666,6 @@ static unsigned int vtmx_poll(struct file *filp, poll_table *wait)
 	if(port->oob_size > 0) 
 		mask |= POLLIN | POLLRDNORM | POLLPRI;
 
-//	if(!test_bit(TTY_THROTTLED, &port->tty->flags)) 
 	if(tty_buffer_space_avail(&port->port) > 0) 
 		mask |= POLLOUT | POLLWRNORM;
 
@@ -755,12 +704,7 @@ static long vtmx_ioctl(struct file * filp, unsigned int cmd, unsigned long arg)
 	}
 	return -ENOIOCTLCMD;
 }
-/*
-	ssize_t (*read) (struct file *, char __user *, size_t, loff_t *);
-	ssize_t (*write) (struct file *, const char __user *, size_t, loff_t *);
-	unsigned int (*poll) (struct file *, struct poll_table_struct *);
-	long (*unlocked_ioctl) (struct file *, unsigned int, unsigned long);
-*/
+
 static struct file_operations vtmx_fops = {
 	.owner 		= THIS_MODULE,
 	.llseek		= no_llseek,
