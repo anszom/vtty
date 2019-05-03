@@ -617,6 +617,8 @@ static unsigned int vtmx_poll(struct file *filp, poll_table *wait)
 	return mask;
 }
 
+#define ALLOWED_STATES (~(TIOCM_DTR|TIOCM_RTS|TIOCM_OUT1|TIOCM_OUT2|TIOCM_LOOP))
+
 static int vtty_modem_state_set(struct vtty_port *port, unsigned int __user *arg)
 {
 	unsigned long flags;
@@ -624,6 +626,7 @@ static int vtty_modem_state_set(struct vtty_port *port, unsigned int __user *arg
 	unsigned int mstate;
 	spin_lock_irqsave(&port->port.lock, flags);
 	ret = get_user(mstate, arg);
+	port->modem_state = (port->modem_state & (~ALLOWED_STATES)) | (mstate & ALLOWED_STATES);
 	spin_unlock_irqrestore(&port->port.lock, flags);
 	return ret;
 }
