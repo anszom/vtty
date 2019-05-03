@@ -92,7 +92,7 @@ void tty_set_raw(int fd)
 {
 	struct termios t;
 	tcgetattr(fd, &t);
-	t.c_cflag = CS8 | CLOCAL | CREAD;
+	t.c_cflag = CS8 | CLOCAL | CREAD | B115200;
 	t.c_iflag = IGNPAR;
 	t.c_oflag = 0;
 	t.c_lflag = 0;
@@ -148,14 +148,10 @@ void t4_mux_write_noslave()
 	int mx, tty;
 	char ibuf[16]="0123456789abcdef";
 	char obuf[16];
-	//t_begin("VTMX write -> unopened VTTY (lost)");
-	t_begin("VTMX write -> unopened VTTY");
+	t_begin("VTMX write -> unopened VTTY, data should be buffered");
 	open_vtmx(&mx);
 	t_assert_eq(write(mx, ibuf, 16), 16);
 	open_vtty(&tty);
-
-//	t_assert_eq(read(tty, obuf, 16), -1);
-//	t_assert(errno == EAGAIN);
 
 	t_assert_eq(read(tty, obuf, 16), 16);
 	t_assert(!memcmp(ibuf, obuf, 16));
@@ -606,9 +602,71 @@ void t11_mux_write_block(syncmode_t sync)
 	close(tty);
 
 }
+
+void t12_close_mux()
+{
+	int mx, tty;
+	char c;
+	t_begin("VTTY read should return EOF when VTMX is closed");
+	open_pair(&mx, &tty);
+
+	close(mx);
+	t_assert_eq(read(tty, &c, 1), 0);
+
+	t_ok();
+	close(tty);
+}
+
+void t13_close_mux_blocking()
+{
+	int mx, tty;
+	char c;
+	t_begin("VTTY read should return -EIO when VTMX is closed during a read");
+	open_pair(&mx, &tty);
+
+	if(fork()==0) {
+		// child process
+		usleep(100000);
+		close(mx);
+		_exit(0);
+	}
+	
+	close(mx);
+
+	set_timeout(250);
+	t_assert_eq(read(tty, &c, 1), -1);
+	t_assert(errno == EIO);
+
+	t_ok();
+	close(tty);
+}
+
+void t14_close_mux_polled()
+{
+	int mx, tty;
+	t_begin("VTTY poll should return readable when VTMX is closed");
+	open_pair(&mx, &tty);
+
+	if(fork()==0) {
+		// child process
+		usleep(100000);
+		close(mx);
+		_exit(0);
+	}
+	
+	close(mx);
+
+	t_assert_eq(select_read(tty, 250), 1);
+
+	t_ok();
+	close(tty);
+}
+
 #ifndef TEST_ON_PTY
 
-void t12_vtty_tcsetattr_vtmx_oob()
+// this functionality is not present on PTY
+
+void t15_vtty_tcsetattr_vtmx_oob()
 {
 	int mx, tty;
 	struct termios ti;
@@ -630,7 +688,7 @@ void t12_vtty_tcsetattr_vtmx_oob()
 	close(tty);
 }
 
-void t13_vtty_mset_vtmx_oob()
+void t16_vtty_mset_vtmx_oob()
 {
 	int mx, tty;
 	char buf[100];
@@ -666,7 +724,7 @@ void t13_vtty_mset_vtmx_oob()
 	close(tty);
 }
 
-void t14_vtty_break_vtmx_oob()
+void t17_vtty_break_vtmx_oob()
 {
 	int mx, tty;
 	char buf[100];
@@ -688,7 +746,7 @@ void t14_vtty_break_vtmx_oob()
 	close(tty);
 }
 
-void t15_vtmx_oob_not_lost()
+void t18_vtmx_oob_not_lost()
 {
 	int mx, tty;
 	char buf[100];
@@ -722,7 +780,7 @@ void t15_vtmx_oob_not_lost()
 	close(tty);
 }
 
-void t16_vtmx_read_wakeup_oob(syncmode_t sync)
+void t19_vtmx_read_wakeup_oob(syncmode_t sync)
 {
 	int mx, tty;
 	char buf[100];
@@ -759,17 +817,42 @@ void t16_vtmx_read_wakeup_oob(syncmode_t sync)
 	close(tty);
 }
 
+void t20_vtmx_mset()
+{
+	int mx, tty;
+	unsigned int a;
+	t_begin("VTMX_SET_MODEM_LINES -> VTTY");
+	open_pair(&mx, &tty);
+	drain(mx);
+
+	a = TIOCM_DTR;
+	ioctl(tty, TIOCMSET, &a);
+	drain(mx);
+
+	ioctl(tty, TIOCMGET, &a);
+	t_assert_eq(a, TIOCM_DTR);
+
+	a = TIOCM_RTS /* should be ignored */ | TIOCM_CTS;
+	ioctl(mx, VTMX_SET_MODEM_LINES, &a);
+	ioctl(tty, TIOCMGET, &a);
+
+	t_assert_eq(a, TIOCM_DTR | TIOCM_CTS);
+	t_ok();
+	close(mx);
+	close(tty);
+}
+
 #endif
 
 int main()
 {
 	signal(SIGCHLD, SIG_IGN);
 	printf("Test using %s\n", MASTER_PATH);
-	/*
+	
 	t1_open_mux_create_slave();
 	t2_mux_return_index();
 	t3_mux_write();
-	//t4_mux_write_noslave(); FIXME
+	t4_mux_write_noslave();
 	t5_slave_write();
 	t6_slave_read_block(S_BLOCKING);
 	t6_slave_read_block(S_NONBLOCKING);
@@ -787,17 +870,22 @@ int main()
 	t11_mux_write_block(S_BLOCKING);
 	t11_mux_write_block(S_NONBLOCKING);
 	t11_mux_write_block(S_POLLED);
-*/
-#ifndef TEST_ON_PTY
-	t12_vtty_tcsetattr_vtmx_oob();
-	t13_vtty_mset_vtmx_oob();
-	t14_vtty_break_vtmx_oob();
-	t15_vtmx_oob_not_lost();
-	t16_vtmx_read_wakeup_oob(S_BLOCKING);
-	t16_vtmx_read_wakeup_oob(S_POLLED);
-#endif
 
-	// TODO: test TIOCMSET on vtmx side
-	// TODO: test for various open/close orderings
+	t12_close_mux();
+
+	// there are other variants of this but they all are handled on the tty layer
+	// it's more important to test the vtmx endpoint
+	t13_close_mux_blocking();
+	t14_close_mux_polled();
+
+#ifndef TEST_ON_PTY
+	t15_vtty_tcsetattr_vtmx_oob();
+	t16_vtty_mset_vtmx_oob();
+	t17_vtty_break_vtmx_oob();
+	t18_vtmx_oob_not_lost();
+	t19_vtmx_read_wakeup_oob(S_BLOCKING);
+	t19_vtmx_read_wakeup_oob(S_POLLED);
+	t20_vtmx_mset();
+#endif
 	return 0;
 }
