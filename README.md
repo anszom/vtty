@@ -64,8 +64,13 @@ include:
 
 Known bugs
 ----------
-The module is mostly stable, but I wouldn't recommend running it on any "important" systems. There may be some
-subtle locking bugs (the linux tty layer is... complex).
+
+Any kinds of flow control were not tested. I assume that XON/XOFF will not work.
+
+The module is mostly stable, but I wouldn't recommend running it on any "important" systems.
+I wouldn't be surprised if there were some subtle locking bugs remaining (the linux tty layer is... complex).
+
+Also see FIXME/TODO markers in the source code.
 
 Some tty ioctls are not supported (notably TIOCMIWAIT & TIOCGICOUNT).
 
