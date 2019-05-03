@@ -1,3 +1,5 @@
+// VTTY test suite
+// This file is released to the public domain.
 #include <unistd.h>
 #include <fcntl.h>
 #include <stdio.h>

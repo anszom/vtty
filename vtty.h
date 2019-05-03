@@ -1,3 +1,5 @@
+// This file is released to the public domain.
+// I doubt that that there is anything copyrightable here anyway...
 #ifndef _VTTY_H
 #define _VTTY_H
 
