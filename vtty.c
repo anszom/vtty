@@ -722,6 +722,8 @@ fail:
 static void __exit vtty_exit(void)
 {
 	mutex_destroy(&portlock);
+	tty_unregister_driver(vtty_driver);
+	put_tty_driver(vtty_driver);
 	misc_deregister(&vtmx_miscdev);
 }
 
