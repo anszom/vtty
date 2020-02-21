@@ -17,6 +17,7 @@
 #include <linux/miscdevice.h>
 #include <linux/circ_buf.h>
 #include <linux/sched.h>
+#include <linux/sched/signal.h>
 #include <linux/poll.h>
 
 #include "vtty.h"
