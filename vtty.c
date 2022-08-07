@@ -135,12 +135,12 @@ static int vtty_write(struct tty_struct *tty, const unsigned char *buf, int coun
 	return ret;
 }
 
-static int vtty_write_room(struct tty_struct *tty)
+static unsigned int vtty_write_room(struct tty_struct *tty)
 {
 	struct vtty_port *port = &ports[tty->index];
 	struct circ_buf *circ = &port->xmit;
 	unsigned long flags;
-	int ret;
+	unsigned int ret;
 
 	spin_lock_irqsave(&port->port.lock, flags);
 	ret = vtty_circ_chars_free(circ);
@@ -149,12 +149,12 @@ static int vtty_write_room(struct tty_struct *tty)
 	return ret;
 }
 
-static int vtty_chars_in_buffer(struct tty_struct *tty)
+static unsigned int vtty_chars_in_buffer(struct tty_struct *tty)
 {
 	struct vtty_port *port = &ports[tty->index];
 	struct circ_buf *circ = &port->xmit;
 	unsigned long flags;
-	int ret;
+	unsigned int ret;
 
 	spin_lock_irqsave(&port->port.lock, flags);
 	ret = vtty_circ_chars_pending(circ);
@@ -711,7 +711,7 @@ static int __init vtty_init(void)
 	return ret;
 
 fail_put:
-	put_tty_driver(vtty_driver);
+	tty_driver_kref_put(vtty_driver);
 
 fail_deregister:
 	misc_deregister(&vtmx_miscdev);
@@ -724,7 +724,7 @@ static void __exit vtty_exit(void)
 {
 	mutex_destroy(&portlock);
 	tty_unregister_driver(vtty_driver);
-	put_tty_driver(vtty_driver);
+	tty_driver_kref_put(vtty_driver);
 	misc_deregister(&vtmx_miscdev);
 }
 
