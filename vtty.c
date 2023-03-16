@@ -43,6 +43,10 @@
 
 static struct tty_driver *vtty_driver;
 
+static bool user_break_timing = true;
+static char* tty_name_template = "ttyV";
+static char* mux_name = "vtmx";
+
 #ifndef TCGETS2
 #error "This code is not adapted to run on an arch lacking TCGETS2/termios2"
 #endif
@@ -671,25 +675,33 @@ static struct file_operations vtmx_fops = {
 
 };
 
-static struct miscdevice vtmx_miscdev = {
-	.minor = MISC_DYNAMIC_MINOR,
-	.name = "vtmx",
-	.fops = &vtmx_fops
-};
-
-
+static struct miscdevice* vtmx_miscdev = NULL;
 
 static int __init vtty_init(void)
 {
-	int ret = misc_register(&vtmx_miscdev);
+  static struct miscdevice vtmx_miscdev_data;
+  int ret = 0;
+  unsigned long driver_flags = 0;
+
+  vtmx_miscdev_data.minor = MISC_DYNAMIC_MINOR;
+  vtmx_miscdev_data.name = mux_name;
+  vtmx_miscdev_data.fops = &vtmx_fops;
+
+  vtmx_miscdev = &vtmx_miscdev_data;
+
+  ret = misc_register(vtmx_miscdev);
+
 	if(ret)
 		goto fail;
 
-	vtty_driver = tty_alloc_driver(VTTY_MAX,
-			TTY_DRIVER_RESET_TERMIOS |
-			TTY_DRIVER_REAL_RAW |
-			TTY_DRIVER_DYNAMIC_DEV |
-			TTY_DRIVER_HARDWARE_BREAK);
+	driver_flags = TTY_DRIVER_RESET_TERMIOS |
+      TTY_DRIVER_REAL_RAW |
+      TTY_DRIVER_DYNAMIC_DEV;
+
+	if (user_break_timing)
+	  driver_flags |= TTY_DRIVER_HARDWARE_BREAK;
+
+	vtty_driver = tty_alloc_driver(VTTY_MAX, driver_flags);
 
 	if(!vtty_driver) {
 		ret = -ENOMEM;
@@ -697,7 +709,7 @@ static int __init vtty_init(void)
 	}
 
 	vtty_driver->driver_name = module_name(THIS_MODULE);
-	vtty_driver->name = "ttyV";
+	vtty_driver->name = tty_name_template;
 	vtty_driver->type = TTY_DRIVER_TYPE_SERIAL;
 	vtty_driver->subtype = SERIAL_TYPE_NORMAL;
 	vtty_driver->init_termios = tty_std_termios;
@@ -715,7 +727,7 @@ fail_put:
 	tty_driver_kref_put(vtty_driver);
 
 fail_deregister:
-	misc_deregister(&vtmx_miscdev);
+	misc_deregister(vtmx_miscdev);
 
 fail:
 	return ret;
@@ -726,8 +738,12 @@ static void __exit vtty_exit(void)
 	mutex_destroy(&portlock);
 	tty_unregister_driver(vtty_driver);
 	tty_driver_kref_put(vtty_driver);
-	misc_deregister(&vtmx_miscdev);
+	misc_deregister(vtmx_miscdev);
 }
+
+module_param(user_break_timing, bool, 0444);
+module_param(tty_name_template, charp, 0444);
+module_param(mux_name, charp, 0444);
 
 module_init(vtty_init);
 module_exit(vtty_exit);
