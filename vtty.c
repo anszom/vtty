@@ -11,6 +11,7 @@
  *      (at your option) any later version.
  */
 #include <linux/module.h>
+#include <linux/moduleparam.h>
 #include <linux/tty.h>
 #include <linux/tty_flip.h>
 #include <linux/mutex.h>
@@ -695,7 +696,7 @@ static int __init vtty_init(void)
 		goto fail_deregister;
 	}
 
-	vtty_driver->driver_name = "vtty";
+	vtty_driver->driver_name = module_name(THIS_MODULE);
 	vtty_driver->name = "ttyV";
 	vtty_driver->type = TTY_DRIVER_TYPE_SERIAL;
 	vtty_driver->subtype = SERIAL_TYPE_NORMAL;
@@ -731,3 +732,5 @@ static void __exit vtty_exit(void)
 module_init(vtty_init);
 module_exit(vtty_exit);
 MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Andrzej Szombierski <qq@kuku.eu.org>");
+MODULE_DESCRIPTION("Virtual serial port driver.");
