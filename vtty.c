@@ -135,7 +135,7 @@ static int vtty_write(struct tty_struct *tty, const unsigned char *buf, int coun
 
 	wake_up_interruptible_sync_poll(&port->read_wait, POLLIN | POLLRDNORM);
 	spin_unlock_irqrestore(&port->port.lock, flags);
-	
+
 	pr_debug("Written %d (cste=%d)\n", ret, CIRC_SPACE_TO_END(circ->head, circ->tail, VTTY_XMIT_SIZE));
 	return ret;
 }
@@ -174,7 +174,7 @@ static int vtty_wait_oob(struct vtty_port *port, unsigned long *pflags)
 	DEFINE_WAIT(wait);
 
 	while(port->oob_size != 0) {
-		if (signal_pending(current)) 
+		if (signal_pending(current))
 			return -ERESTARTSYS;
 
 		prepare_to_wait(&port->oob_wait, &wait, TASK_INTERRUPTIBLE);
@@ -290,10 +290,10 @@ static int vtty_create_port(int index)
 	struct device *dev;
 	unsigned long page;
 	int ret = 0;
-	
+
 	tty_port_init(&port->port);
 	tty_buffer_set_limit(&port->port, 8192);
-	
+
 	page = get_zeroed_page(GFP_KERNEL);
 	if (!page) {
 		ret = -ENOMEM;
@@ -408,7 +408,7 @@ static ssize_t vtmx_read (struct file *filp, char __user *ptr, size_t size, loff
 	int ret = 0;
 	DEFINE_WAIT(wait);
 
-	if(size < 1 + sizeof(union vtty_oob_data)) 
+	if(size < 1 + sizeof(union vtty_oob_data))
 		return -EMSGSIZE; // don't bother with clueless userspace apps
 
 	spin_lock_irqsave(&port->port.lock, flags);
@@ -453,7 +453,7 @@ static ssize_t vtmx_read (struct file *filp, char __user *ptr, size_t size, loff
 					ret = -EFAULT;
 					break;
 				}
-				
+
 				port->oob_size = 0;
 				wake_up_interruptible_sync(&port->oob_wait);
 				break;
@@ -499,7 +499,7 @@ static ssize_t vtmx_read (struct file *filp, char __user *ptr, size_t size, loff
 			++ptr;
 			--size;
 		}
-		
+
 		if(c > size)
 			c = size;
 
@@ -524,9 +524,9 @@ static ssize_t vtmx_read (struct file *filp, char __user *ptr, size_t size, loff
 		} else
 			pr_debug("no tty_wakeup\n");
 	}
-	
+
 	mutex_unlock(&portlock);
-	
+
 	return ret;
 }
 
@@ -621,12 +621,12 @@ static unsigned int vtmx_poll(struct file *filp, poll_table *wait)
 	// is there anything to read?
 	if(CIRC_CNT_TO_END(circ->head, circ->tail, VTTY_XMIT_SIZE) > 0)
 		mask |= POLLIN | POLLRDNORM;
-	
+
 	// any oob data?
-	if(port->oob_size > 0) 
+	if(port->oob_size > 0)
 		mask |= POLLIN | POLLRDNORM | POLLPRI;
 
-	if(tty_buffer_space_avail(&port->port) > 0) 
+	if(tty_buffer_space_avail(&port->port) > 0)
 		mask |= POLLOUT | POLLWRNORM;
 
 	pr_debug("poll() (%d, %d) return %x\n", (int)CIRC_CNT_TO_END(circ->head, circ->tail, VTTY_XMIT_SIZE), (int)port->oob_size, (int)mask);
@@ -654,7 +654,7 @@ static long vtmx_ioctl(struct file * filp, unsigned int cmd, unsigned long arg)
 	struct vtty_port *port = filp->private_data;
 
 	switch(cmd) {
-	case VTMX_GET_VTTY_NUM: 
+	case VTMX_GET_VTTY_NUM:
 		return put_user(port - ports, (unsigned int __user *)arg);
 
 	case VTMX_SET_MODEM_LINES:
@@ -744,8 +744,11 @@ static void __exit vtty_exit(void)
 }
 
 module_param(user_break_timing, bool, 0444);
+MODULE_PARM_DESC(user_break_timing, " set true, if the vtty provider can do break signal timing, defaults to Y");
 module_param(tty_name_template, charp, 0444);
+MODULE_PARM_DESC(tty_name_template, " the vtty slave name template for the vtty's, defaults to 'ttyV'");
 module_param(mux_name, charp, 0444);
+MODULE_PARM_DESC(mux_name, " the vtty master name, defaults to 'vtmx'");
 
 module_init(vtty_init);
 module_exit(vtty_exit);
