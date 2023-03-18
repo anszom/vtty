@@ -73,11 +73,14 @@ struct vtty_port {
 	size_t oob_size;
 
 	unsigned int modem_state;
+	bool master_is_open;
 
 	wait_queue_head_t read_wait, write_wait; // read/write from vtmx perspective
 	wait_queue_head_t oob_wait; // vtty-side ioctl => vtmx-side read
 };
 static struct vtty_port ports[VTTY_MAX];
+
+static void vtty_destroy_port(int index);
 
 static int vtty_open(struct tty_struct *tty, struct file *filp)
 {
@@ -92,6 +95,9 @@ static int vtty_open(struct tty_struct *tty, struct file *filp)
 		// this will cause the ldisc layer to call vtty_unthrottle whenever the
 		// free space is above the watermark
 		set_bit(TTY_THROTTLED, &tty->flags);
+
+		// push buffered data out
+		tty_flip_buffer_push(&vtty->port);
 
 		dev_dbg(tty->dev, "%s exit\n", __func__);
 	} else {
@@ -112,6 +118,9 @@ static void vtty_close(struct tty_struct *tty, struct file *filp)
 	dev_dbg(tty->dev, "%s enter\n", __func__);
 
 	vtty->tty = NULL;
+
+	if (! vtty->master_is_open)
+		vtty_destroy_port(tty->index);
 
 	dev_dbg(tty->dev, "%s exit\n", __func__);
 
@@ -355,6 +364,7 @@ static int vtty_create_port(int index)
 
 	pr_debug("%s %s port[%d] enter\n", module_name(THIS_MODULE), __func__, (int)index);
 
+	memset(port, 0, sizeof(*port));
 	tty_port_init(&port->port);
 	tty_buffer_set_limit(&port->port, 8192);
 
@@ -392,7 +402,6 @@ fail_destroy:
 
 	pr_debug("%s %s port[%d] err exit\n", module_name(THIS_MODULE), __func__, (int)index);
 
-	memset(port, 0, sizeof(*port));
 	return ret;
 }
 
@@ -405,18 +414,8 @@ static void vtty_destroy_port(int index)
 //	spin_unlock_irqrestore(&port->port.lock, flags);
 
 	pr_debug("%s %s port[%d] enter\n", module_name(THIS_MODULE), __func__, (int)index);
-	if(port->tty) {
-		set_bit(TTY_IO_ERROR, &port->tty->flags);
 
-		// FIXME do some waking up?
-		// FIXME locking?
-		set_bit(TTY_OTHER_CLOSED, &port->tty->flags);
-
-		// again wake up?
-		tty_vhangup(port->tty);
-	}
-
-	tty_unregister_device(vtty_driver, index);
+	tty_port_unregister_device(&port->port, vtty_driver, index);
 
 	free_page((unsigned long)port->xmit.buf);
 	port->xmit.buf = NULL;
@@ -425,7 +424,6 @@ static void vtty_destroy_port(int index)
 	tty_port_destroy(&port->port);
 
 	pr_debug("%s %s port[%d] exit\n", module_name(THIS_MODULE), __func__, (int)index);
-	memset(port, 0, sizeof(*port));
 }
 
 static int vtty_find_free_port(void)
@@ -443,6 +441,12 @@ static int vtmx_open(struct inode *nodp, struct file *filp)
 	int index;
 
 	pr_debug("%s %s enter\n", module_name(THIS_MODULE), __func__);
+
+	nonseekable_open(nodp, filp);
+
+	/* We refuse fsnotify events on vtmx, since it's a shared resource */
+	filp->f_mode |= FMODE_NONOTIFY;
+
 	mutex_lock(&portlock);
 	index = vtty_find_free_port();
 	if(index < 0) {
@@ -454,6 +458,7 @@ static int vtmx_open(struct inode *nodp, struct file *filp)
 	if(rv < 0)
 		goto fail_unlock;
 
+	ports[index].master_is_open = true;
 	filp->private_data = &ports[index];
 
 	pr_debug("%s %s port %d created\n", module_name(THIS_MODULE), __func__, index);
@@ -462,7 +467,6 @@ static int vtmx_open(struct inode *nodp, struct file *filp)
 
 	pr_debug("%s %s exit\n", module_name(THIS_MODULE), __func__);
 
-	nonseekable_open(nodp, filp);
 	return rv;
 
 fail_unlock:
@@ -476,9 +480,38 @@ fail_unlock:
 static int vtmx_release (struct inode *nodp, struct file *filp)
 {
 	int idx;
+	struct vtty_port *port = filp->private_data;
+
 	mutex_lock(&portlock);
-	idx = ((struct vtty_port*)filp->private_data) - ports;
-	vtty_destroy_port(idx);
+
+	idx = port - ports;
+
+	pr_debug("%s %s port[%d] enter\n", module_name(THIS_MODULE), __func__, (int)idx);
+
+	if(port->tty) {
+		set_bit(TTY_IO_ERROR, &port->tty->flags);
+		wake_up_interruptible(&port->read_wait);
+		wake_up_interruptible(&port->write_wait);
+	}
+
+	if(port->tty) {
+		// FIXME locking?
+		set_bit(TTY_OTHER_CLOSED, &port->tty->flags);
+		wake_up_interruptible(&port->read_wait);
+		wake_up_interruptible(&port->write_wait);
+	}
+
+	if(port->tty) {
+		tty_vhangup(port->tty);
+		wake_up_interruptible(&port->read_wait);
+		wake_up_interruptible(&port->write_wait);
+	}
+
+	port->master_is_open = false;
+
+	if (!port->tty)
+		vtty_destroy_port(idx);
+
 	mutex_unlock(&portlock);
 
 	pr_debug("%s %s port[%d] exit\n", module_name(THIS_MODULE), __func__, idx);
