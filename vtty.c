@@ -85,12 +85,15 @@ static int vtty_open(struct tty_struct *tty, struct file *filp)
 	struct vtty_port *vtty = &ports[tty->index];
 	mutex_lock(&portlock);
 	if(vtty->dev) {
+		dev_dbg(tty->dev, "%s enter\n", __func__);
 		vtty->tty = tty;
+
 		// just like pty_open, we keep the tty in the THROTTLED state permanently
 		// this will cause the ldisc layer to call vtty_unthrottle whenever the
 		// free space is above the watermark
 		set_bit(TTY_THROTTLED, &tty->flags);
 
+		dev_dbg(tty->dev, "%s exit\n", __func__);
 	} else {
 		// race between vtmx_release() & vtty_open()
 		ret = -EIO;
@@ -103,9 +106,17 @@ static int vtty_open(struct tty_struct *tty, struct file *filp)
 static void vtty_close(struct tty_struct *tty, struct file *filp)
 {
 	struct vtty_port *vtty = &ports[tty->index];
+
 	mutex_lock(&portlock);
+
+	dev_dbg(tty->dev, "%s enter\n", __func__);
+
 	vtty->tty = NULL;
+
+	dev_dbg(tty->dev, "%s exit\n", __func__);
+
 	mutex_unlock(&portlock);
+
 	return;
 }
 
@@ -116,6 +127,9 @@ static int vtty_write(struct tty_struct *tty, const unsigned char *buf, int coun
 	struct circ_buf *circ = &port->xmit;
 	unsigned long flags;
 	int ret = 0;
+
+	dev_dbg(tty->dev, "%s enter\n", __func__);
+
 	spin_lock_irqsave(&port->port.lock, flags);
 
 	while (1) {
@@ -136,7 +150,9 @@ static int vtty_write(struct tty_struct *tty, const unsigned char *buf, int coun
 	wake_up_interruptible_sync_poll(&port->read_wait, POLLIN | POLLRDNORM);
 	spin_unlock_irqrestore(&port->port.lock, flags);
 
-	pr_debug("Written %d (cste=%d)\n", ret, CIRC_SPACE_TO_END(circ->head, circ->tail, VTTY_XMIT_SIZE));
+	dev_dbg(tty->dev, "%s written %d (cste=%d)\n", __func__, ret, CIRC_SPACE_TO_END(circ->head, circ->tail, VTTY_XMIT_SIZE));
+	dev_dbg(tty->dev, "%s exit\n", __func__);
+
 	return ret;
 }
 
@@ -147,10 +163,15 @@ static unsigned int vtty_write_room(struct tty_struct *tty)
 	unsigned long flags;
 	unsigned int ret;
 
+	dev_dbg(tty->dev, "%s enter\n", __func__);
+
 	spin_lock_irqsave(&port->port.lock, flags);
 	ret = vtty_circ_chars_free(circ);
 	spin_unlock_irqrestore(&port->port.lock, flags);
-	pr_debug("Write room = %d\n", ret);
+
+	dev_dbg(tty->dev, "write room = %d\n", ret);
+	dev_dbg(tty->dev, "%s exit\n", __func__);
+
 	return ret;
 }
 
@@ -161,9 +182,14 @@ static unsigned int vtty_chars_in_buffer(struct tty_struct *tty)
 	unsigned long flags;
 	unsigned int ret;
 
+	dev_dbg(tty->dev, "%s enter\n", __func__);
+
 	spin_lock_irqsave(&port->port.lock, flags);
 	ret = vtty_circ_chars_pending(circ);
 	spin_unlock_irqrestore(&port->port.lock, flags);
+
+	dev_dbg(tty->dev, "%s exit\n", __func__);
+
 	return ret;
 }
 
@@ -172,6 +198,8 @@ static unsigned int vtty_chars_in_buffer(struct tty_struct *tty)
 static int vtty_wait_oob(struct vtty_port *port, unsigned long *pflags)
 {
 	DEFINE_WAIT(wait);
+
+	dev_dbg(port->tty->dev, "%s enter\n", __func__);
 
 	while(port->oob_size != 0) {
 		if (signal_pending(current))
@@ -183,6 +211,8 @@ static int vtty_wait_oob(struct vtty_port *port, unsigned long *pflags)
 		finish_wait(&port->oob_wait, &wait);
 		spin_lock_irqsave(&port->port.lock, *pflags);
 	}
+
+	dev_dbg(port->tty->dev, "%s exit\n", __func__);
 
 	return 0;
 }
@@ -198,6 +228,9 @@ static int vtty_queue_oob(struct vtty_port *port, int tag, void *data, size_t le
 {
 	int ret = 0;
 	unsigned long flags;
+
+	dev_dbg(port->tty->dev, "%s enter\n", __func__);
+
 	spin_lock_irqsave(&port->port.lock, flags);
 	ret = vtty_wait_oob(port, &flags);
 
@@ -205,6 +238,9 @@ static int vtty_queue_oob(struct vtty_port *port, int tag, void *data, size_t le
 		vtty_do_queue_oob(port, tag, data, len);
 
 	spin_unlock_irqrestore(&port->port.lock, flags);
+
+	dev_dbg(port->tty->dev, "%s exit\n", __func__);
+
 	return ret;
 }
 
@@ -212,22 +248,29 @@ static void vtty_set_termios(struct tty_struct *tty, struct ktermios *old_termio
 {
 	struct vtty_port *port = &ports[tty->index];
 
+	dev_dbg(tty->dev, "%s enter\n", __func__);
+
 	// this may sleep
 	vtty_queue_oob(port, TAG_SET_TERMIOS, &tty->termios, sizeof(tty->termios));
+
+	dev_dbg(tty->dev, "%s exit\n", __func__);
 }
 
 static void vtty_throttle(struct tty_struct *tty)
 {
-	pr_debug("throttle!\n");
-
+	dev_dbg(tty->dev, "%s\n", __func__);
 }
 
 static void vtty_unthrottle(struct tty_struct *tty)
 {
 	struct vtty_port *port = &ports[tty->index];
-	pr_debug("unthrottle\n");
+
+	dev_dbg(tty->dev, "%s enter\n", __func__);
+
 	wake_up_interruptible_sync_poll(&port->write_wait, POLLOUT | POLLWRNORM);
 	set_bit(TTY_THROTTLED, &tty->flags); 	// just like pty_unthrottle
+
+	dev_dbg(tty->dev, "%s exit\n", __func__);
 }
 
 static int vtty_tiocmget(struct tty_struct *tty)
@@ -235,9 +278,15 @@ static int vtty_tiocmget(struct tty_struct *tty)
 	struct vtty_port *port = &ports[tty->index];
 	unsigned long flags;
 	unsigned int ret;
+
+	dev_dbg(tty->dev, "%s enter\n", __func__);
+
 	spin_lock_irqsave(&port->port.lock, flags);
 	ret = port->modem_state;
 	spin_unlock_irqrestore(&port->port.lock, flags);
+
+	dev_dbg(tty->dev, "%s exit\n", __func__);
+
 	return ret;
 }
 
@@ -247,26 +296,39 @@ static int vtty_tiocmset(struct tty_struct *tty, unsigned int set, unsigned int 
 	unsigned long flags;
 	int ret;
 
+	dev_dbg(tty->dev, "%s enter\n", __func__);
+
 	spin_lock_irqsave(&port->port.lock, flags);
 	ret = vtty_wait_oob(port, &flags);
 
 	if(ret == 0) {
 		port->modem_state = (port->modem_state | set) & (~clear);
-		pr_debug("new modem state %x (%x %x)\n", port->modem_state, set, clear);
+
+		dev_dbg(tty->dev, "new modem state %x (%x %x)\n", port->modem_state, set, clear);
+
 		vtty_do_queue_oob(port, TAG_SET_MODEM, &port->modem_state, sizeof(port->modem_state));
 	}
 
 	spin_unlock_irqrestore(&port->port.lock, flags);
+
+	dev_dbg(tty->dev, "%s exit\n", __func__);
+
 	return ret;
 }
 
 static int vtty_break_ctl(struct tty_struct *tty, int state)
 {
 	struct vtty_port *port = &ports[tty->index];
+
+	dev_dbg(tty->dev, "%s enter\n", __func__);
+
 	// state = -1 	-> on
 	// state = 0 	-> off
 	// state > 0 	-> on for X ms
 	vtty_queue_oob(port, TAG_BREAK_CTL, &state, sizeof(state));
+
+	dev_dbg(tty->dev, "%s exit\n", __func__);
+
 	return 0;
 }
 
@@ -291,6 +353,8 @@ static int vtty_create_port(int index)
 	unsigned long page;
 	int ret = 0;
 
+	pr_debug("%s %s port[%d] enter\n", module_name(THIS_MODULE), __func__, (int)index);
+
 	tty_port_init(&port->port);
 	tty_buffer_set_limit(&port->port, 8192);
 
@@ -314,6 +378,9 @@ static int vtty_create_port(int index)
 	init_waitqueue_head(&port->write_wait);
 	init_waitqueue_head(&port->oob_wait);
 	port->dev = dev;
+
+	pr_debug("%s %s port[%d] exit\n", module_name(THIS_MODULE), __func__, (int)index);
+
 	return 0;
 
 fail_free:
@@ -322,6 +389,9 @@ fail_free:
 
 fail_destroy:
 	tty_port_destroy(&port->port);
+
+	pr_debug("%s %s port[%d] err exit\n", module_name(THIS_MODULE), __func__, (int)index);
+
 	memset(port, 0, sizeof(*port));
 	return ret;
 }
@@ -334,6 +404,7 @@ static void vtty_destroy_port(int index)
 //	spin_lock_irqsave(&port->port.lock, flags);
 //	spin_unlock_irqrestore(&port->port.lock, flags);
 
+	pr_debug("%s %s port[%d] enter\n", module_name(THIS_MODULE), __func__, (int)index);
 	if(port->tty) {
 		set_bit(TTY_IO_ERROR, &port->tty->flags);
 
@@ -352,6 +423,8 @@ static void vtty_destroy_port(int index)
 
 	port->dev = NULL;
 	tty_port_destroy(&port->port);
+
+	pr_debug("%s %s port[%d] exit\n", module_name(THIS_MODULE), __func__, (int)index);
 	memset(port, 0, sizeof(*port));
 }
 
@@ -368,6 +441,8 @@ static int vtmx_open(struct inode *nodp, struct file *filp)
 {
 	int rv = 0;
 	int index;
+
+	pr_debug("%s %s enter\n", module_name(THIS_MODULE), __func__);
 	mutex_lock(&portlock);
 	index = vtty_find_free_port();
 	if(index < 0) {
@@ -380,13 +455,21 @@ static int vtmx_open(struct inode *nodp, struct file *filp)
 		goto fail_unlock;
 
 	filp->private_data = &ports[index];
+
+	pr_debug("%s %s port %d created\n", module_name(THIS_MODULE), __func__, index);
+
 	mutex_unlock(&portlock);
+
+	pr_debug("%s %s exit\n", module_name(THIS_MODULE), __func__);
 
 	nonseekable_open(nodp, filp);
 	return rv;
 
 fail_unlock:
 	mutex_unlock(&portlock);
+
+	pr_debug("%s %s err exit\n", module_name(THIS_MODULE), __func__);
+
 	return rv;
 }
 
@@ -397,6 +480,9 @@ static int vtmx_release (struct inode *nodp, struct file *filp)
 	idx = ((struct vtty_port*)filp->private_data) - ports;
 	vtty_destroy_port(idx);
 	mutex_unlock(&portlock);
+
+	pr_debug("%s %s port[%d] exit\n", module_name(THIS_MODULE), __func__, idx);
+
 	return 0;
 }
 
@@ -411,6 +497,8 @@ static ssize_t vtmx_read (struct file *filp, char __user *ptr, size_t size, loff
 	if(size < 1 + sizeof(union vtty_oob_data))
 		return -EMSGSIZE; // don't bother with clueless userspace apps
 
+	pr_debug("%s %s port[%d] enter\n", module_name(THIS_MODULE), __func__, (int)(port - ports));
+
 	spin_lock_irqsave(&port->port.lock, flags);
 
 #if 0
@@ -422,16 +510,21 @@ static ssize_t vtmx_read (struct file *filp, char __user *ptr, size_t size, loff
 		goto out;
 	}
 #endif
-	pr_debug("read(%d)\n", (int)size);
+	pr_debug("%s %s port[%d] read(%d)\n", module_name(THIS_MODULE), __func__, (int)(port - ports), (int)size);
+
 	while(size > 0) {
 		int c;
-		pr_debug("(size=%d ret=%d)\n", (int)size, (int)ret);
+
+		pr_debug("%s %s port[%d] (size=%d ret=%d)\n", module_name(THIS_MODULE), __func__, (int)(port - ports), (int)size, (int)ret);
+
 		if(ret == 0) {
 			// oob
 			if(port->oob_size > 0) {
 				char tag = (char)port->oob_tag;
 				int copystatus;
-				pr_debug("-> oob %d\n", tag);
+
+				pr_debug("%s %s port[%d] -> oob %d\n", module_name(THIS_MODULE), __func__, (int)(port - ports), tag);
+
 				if(copy_to_user(ptr, &tag, 1)) {
 					ret = -EFAULT;
 					break;
@@ -462,7 +555,8 @@ static ssize_t vtmx_read (struct file *filp, char __user *ptr, size_t size, loff
 
 		// normal data, or wait for events
 		c = CIRC_CNT_TO_END(circ->head, circ->tail, VTTY_XMIT_SIZE);
-		pr_debug("-> circ=%d\n", c);
+
+		pr_debug("%s %s port[%d] -> circ=%d\n", module_name(THIS_MODULE), __func__, (int)(port - ports), c);
 
 		if(c == 0) {
 			if(ret > 0)
@@ -519,13 +613,16 @@ static ssize_t vtmx_read (struct file *filp, char __user *ptr, size_t size, loff
 	mutex_lock(&portlock);
 	if (vtty_circ_chars_pending(circ) < WAKEUP_CHARS) {
 		if(port->tty) {
-			pr_debug("tty_wakeup\n");
+			dev_dbg(port->tty->dev, "%s tty_wakeup\n", __func__);
 			tty_wakeup(port->tty);
-		} else
-			pr_debug("no tty_wakeup\n");
+		} else {
+			pr_debug("%s %s port[%d] no tty_wakeup\n", module_name(THIS_MODULE), __func__, (int)(port - ports));
+		}
 	}
 
 	mutex_unlock(&portlock);
+
+	pr_debug("%s %s port[%d] exit\n", module_name(THIS_MODULE), __func__, (int)(port - ports));
 
 	return ret;
 }
@@ -537,7 +634,8 @@ static ssize_t vtmx_write (struct file *filp, const char __user *ptr, size_t siz
 	ssize_t written = 0;
 	int ret = 0;
 	DEFINE_WAIT(wait);
-	pr_debug("enter vtmx_write (%d %d)\n", (int)size, (int)tty_buffer_space_avail(&port->port));
+
+	pr_debug("%s %s port[%d] enter (%d %d)\n", module_name(THIS_MODULE), __func__, (int)(port - ports), (int)size, (int)tty_buffer_space_avail(&port->port));
 
 	while(size > 0) {
 		size_t tmp_size = size;
@@ -599,7 +697,8 @@ static ssize_t vtmx_write (struct file *filp, const char __user *ptr, size_t siz
 	if(written > 0)
 		tty_flip_buffer_push(&port->port);
 
-	pr_debug("leave vtmx_write %d %d %d\n", (int)written, (int)ret, (int)tty_buffer_space_avail(&port->port));
+	pr_debug("%s %s port[%d] exit %d %d %d\n", module_name(THIS_MODULE), __func__, (int)(port - ports), (int)written, (int)ret, (int)tty_buffer_space_avail(&port->port));
+
 	if(ret)
 		return ret;
 
@@ -613,6 +712,8 @@ static unsigned int vtmx_poll(struct file *filp, poll_table *wait)
 	struct vtty_port *port = filp->private_data;
 	struct circ_buf *circ = &port->xmit;
 	unsigned long flags;
+
+	pr_debug("%s %s port[%d] enter\n", module_name(THIS_MODULE), __func__, (int)(port - ports));
 
 	poll_wait(filp, &port->read_wait, wait);
 	poll_wait(filp, &port->write_wait, wait);
@@ -629,8 +730,9 @@ static unsigned int vtmx_poll(struct file *filp, poll_table *wait)
 	if(tty_buffer_space_avail(&port->port) > 0)
 		mask |= POLLOUT | POLLWRNORM;
 
-	pr_debug("poll() (%d, %d) return %x\n", (int)CIRC_CNT_TO_END(circ->head, circ->tail, VTTY_XMIT_SIZE), (int)port->oob_size, (int)mask);
 	spin_unlock_irqrestore(&port->port.lock, flags);
+
+	pr_debug("%s %s port[%d] exit (%d, %d) 0x%x\n", module_name(THIS_MODULE), __func__, (int)(port - ports), (int)CIRC_CNT_TO_END(circ->head, circ->tail, VTTY_XMIT_SIZE), (int)port->oob_size, (int)mask);
 
 	return mask;
 }
@@ -642,10 +744,18 @@ static int vtty_modem_state_set(struct vtty_port *port, unsigned int __user *arg
 	unsigned long flags;
 	int ret;
 	unsigned int mstate;
+
+	pr_debug("%s %s port[%d] enter\n", module_name(THIS_MODULE), __func__, (int)(port - ports));
+
 	spin_lock_irqsave(&port->port.lock, flags);
+
 	ret = get_user(mstate, arg);
 	port->modem_state = (port->modem_state & (~ALLOWED_STATES)) | (mstate & ALLOWED_STATES);
+
 	spin_unlock_irqrestore(&port->port.lock, flags);
+
+	pr_debug("%s %s port[%d] exit\n", module_name(THIS_MODULE), __func__, (int)(port - ports));
+
 	return ret;
 }
 
@@ -653,9 +763,11 @@ static long vtmx_ioctl(struct file * filp, unsigned int cmd, unsigned long arg)
 {
 	struct vtty_port *port = filp->private_data;
 
+	pr_debug("%s %s %s on port %d\n", module_name(THIS_MODULE), __func__, (cmd == VTMX_GET_VTTY_NUM ? "VTMX_GET_VTTY_NUM" : (cmd == VTMX_SET_MODEM_LINES) ? "VTMX_SET_MODEM_LINES" : "(unknown)"), (int)(port - ports));
+
 	switch(cmd) {
 	case VTMX_GET_VTTY_NUM:
-		return put_user(port - ports, (unsigned int __user *)arg);
+		return put_user((port - ports), (unsigned int __user *)arg);
 
 	case VTMX_SET_MODEM_LINES:
 		return vtty_modem_state_set(port, (unsigned int __user*)arg);
@@ -679,27 +791,27 @@ static struct miscdevice* vtmx_miscdev = NULL;
 
 static int __init vtty_init(void)
 {
-  static struct miscdevice vtmx_miscdev_data;
-  int ret = 0;
-  unsigned long driver_flags = 0;
+	static struct miscdevice vtmx_miscdev_data;
+	int ret = 0;
+	unsigned long driver_flags = 0;
 
-  vtmx_miscdev_data.minor = MISC_DYNAMIC_MINOR;
-  vtmx_miscdev_data.name = mux_name;
-  vtmx_miscdev_data.fops = &vtmx_fops;
+	vtmx_miscdev_data.minor = MISC_DYNAMIC_MINOR;
+	vtmx_miscdev_data.name = mux_name;
+	vtmx_miscdev_data.fops = &vtmx_fops;
 
-  vtmx_miscdev = &vtmx_miscdev_data;
+	vtmx_miscdev = &vtmx_miscdev_data;
 
-  ret = misc_register(vtmx_miscdev);
+	ret = misc_register(vtmx_miscdev);
 
 	if(ret)
 		goto fail;
 
 	driver_flags = TTY_DRIVER_RESET_TERMIOS |
-      TTY_DRIVER_REAL_RAW |
-      TTY_DRIVER_DYNAMIC_DEV;
+			TTY_DRIVER_REAL_RAW |
+			TTY_DRIVER_DYNAMIC_DEV;
 
 	if (user_break_timing)
-	  driver_flags |= TTY_DRIVER_HARDWARE_BREAK;
+		driver_flags |= TTY_DRIVER_HARDWARE_BREAK;
 
 	vtty_driver = tty_alloc_driver(VTTY_MAX, driver_flags);
 
@@ -723,6 +835,9 @@ static int __init vtty_init(void)
 
 	mutex_init(&portlock);
 
+	pr_info("%s initialized\n", vtty_driver->driver_name);
+	pr_debug("%s mux device is %s, virtual tty template is %s\n", module_name(THIS_MODULE), mux_name, tty_name_template);
+
 	return ret;
 
 fail_put:
@@ -737,14 +852,18 @@ fail:
 
 static void __exit vtty_exit(void)
 {
+	pr_debug("%s removing\n", module_name(THIS_MODULE));
+
 	mutex_destroy(&portlock);
 	tty_unregister_driver(vtty_driver);
 	tty_driver_kref_put(vtty_driver);
 	misc_deregister(vtmx_miscdev);
+
+	pr_info("%s removed\n", module_name(THIS_MODULE));
 }
 
 module_param(user_break_timing, bool, 0444);
-MODULE_PARM_DESC(user_break_timing, " set true, if the vtty provider can do break signal timing, defaults to Y");
+MODULE_PARM_DESC(user_break_timing, " set N, if the userspace vtty provider/master cannot do break signal timing, defaults to Y");
 module_param(tty_name_template, charp, 0444);
 MODULE_PARM_DESC(tty_name_template, " the vtty slave name template for the vtty's, defaults to 'ttyV'");
 module_param(mux_name, charp, 0444);
