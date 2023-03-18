@@ -116,7 +116,7 @@ void open_vtmx(int *mx)
 
 void open_vtty(int *tty)
 {
-	*tty = open(SLAVE_PATH, O_RDWR);
+	*tty = open(SLAVE_PATH, O_RDWR | O_CLOEXEC | O_NOCTTY);
 	t_assert(*tty >= 0);
 	tty_set_raw(*tty);
 }
@@ -752,7 +752,7 @@ void t18_vtmx_oob_not_lost()
 {
 	int mx, tty;
 	char buf[100];
-	t_begin("VTMX out-of-bounds data should not be lost");
+	t_begin("VTMX out-of-band data should not be lost");
 	open_pair(&mx, &tty);
 	drain(mx); // tcsetattr will happen on open
 

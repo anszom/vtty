@@ -1,0 +1,6 @@
+KERNEL!="vtmx|ttyV[0-9]*", GOTO="_vtty_end"
+
+ACTION=="add", SUBSYSTEMS=="misc", KERNEL=="vtmx", GROUP="dialout", MODE="0660"
+ACTION=="add", SUBSYSTEMS=="misc", KERNEL=="ttyV[0-9]*", GROUP="dialout", MODE="0660"
+
+LABEL="_vtty_end"
