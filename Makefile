@@ -1,8 +1,13 @@
-obj-m := vtty.o
-KVERSION := $(shell uname -r)
+KVERSION ?= $(shell uname -r)
+KDIR ?= /lib/modules/$(KVERSION)/build
 
-all: vtty.c
-	$(MAKE) -C /lib/modules/$(KVERSION)/build M=$(PWD) modules
+modules: vtty.c vtty.h
+	$(MAKE) -C $(KDIR) M=$(PWD) modules
+
+modules_install: modules
+	$(MAKE) -C $(KDIR) M=$(PWD) modules_install
+
+all: modules
 
 clean:
-	$(MAKE) -C /lib/modules/$(KVERSION)/build M=$(PWD) clean
+	$(MAKE) -C $(KDIR) M=$(PWD) clean
