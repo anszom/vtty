@@ -19,6 +19,7 @@
 #include <linux/sched.h>
 #include <linux/sched/signal.h>
 #include <linux/poll.h>
+#include <linux/version.h>
 
 #include "vtty.h"
 
@@ -135,7 +136,11 @@ static int vtty_write(struct tty_struct *tty, const unsigned char *buf, int coun
 	return ret;
 }
 
+#if LINUX_VERSION_CODE > KERNEL_VERSION(5,6,0)
 static unsigned int vtty_write_room(struct tty_struct *tty)
+#else
+static int vtty_write_room(struct tty_struct *tty)
+#endif
 {
 	struct vtty_port *port = &ports[tty->index];
 	struct circ_buf *circ = &port->xmit;
@@ -149,7 +154,11 @@ static unsigned int vtty_write_room(struct tty_struct *tty)
 	return ret;
 }
 
+#if LINUX_VERSION_CODE > KERNEL_VERSION(5,6,0)
 static unsigned int vtty_chars_in_buffer(struct tty_struct *tty)
+#else
+static int vtty_chars_in_buffer(struct tty_struct *tty)
+#endif
 {
 	struct vtty_port *port = &ports[tty->index];
 	struct circ_buf *circ = &port->xmit;
