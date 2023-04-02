@@ -62,6 +62,21 @@ include:
 - PTY supports locking/unlocking access to the pseudo-tty using TIOCSPTLCK. This is not supported in VTTY
 
 
+Build for user-mode linux
+-------------------------
+
+For debugging purposes, any kind of virtualization etc., it is possible to use this module also in user-mode linux.
+
+Therefor you can "cross-compile" it like any other architecture, as a user mode module.
+
+When you built your um-kernel in ``~/user-mode-linux/build_uml-$(uname -r)``, then you can build this module like this:
+
+```
+$ cd vtty
+$ make KDIR=~/user-mode-linux/build_uml-$(uname -r) ARCH=um
+```
+
+
 Known bugs
 ----------
 

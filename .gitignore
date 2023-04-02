@@ -9,3 +9,4 @@ modules.order
 test/vtty_test
 test/pty_test
 test/portmirror
+/vtty.mod

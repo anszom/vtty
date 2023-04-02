@@ -4,3 +4,4 @@
 #
 
 obj-m := vtty.o
+#ccflags-y := -DDEBUG -g
