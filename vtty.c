@@ -719,7 +719,6 @@ static int __init vtty_init(void)
 	if(ret)
 		goto fail_put;
 
-	memset(ports, 0, sizeof(ports));
 
 	mutex_init(&portlock);
 
