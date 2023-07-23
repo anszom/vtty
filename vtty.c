@@ -212,7 +212,11 @@ static int vtty_queue_oob(struct vtty_port *port, int tag, void *data, size_t le
 	return ret;
 }
 
+#if LINUX_VERSION_CODE > KERNEL_VERSION(6,0,0)
+static void vtty_set_termios(struct tty_struct *tty, const struct ktermios *old_termios)
+#else
 static void vtty_set_termios(struct tty_struct *tty, struct ktermios *old_termios)
+#endif
 {
 	struct vtty_port *port = &ports[tty->index];
 
