@@ -450,7 +450,14 @@ static ssize_t vtmx_read (struct file *filp, char __user *ptr, size_t size, loff
 				size--;
 
 				if(tag == TAG_SET_TERMIOS) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6,4,0)
 					copystatus = kernel_termios_to_user_termios((struct termios2 __user*)ptr, &port->oob_data.termios);
+#else
+#ifdef CONFIG_SPARC
+#error "This code will not run correctly on SPARC because of differences between structs termios2 & ktermios. Ask kernel maintainers to export kernel_termios_to_user_termios."
+#endif
+					copystatus = copy_to_user(ptr, &port->oob_data.termios, sizeof(struct termios2));
+#endif
 					ret += sizeof(struct termios2);
 				} else {
 					copystatus = copy_to_user(ptr, &port->oob_data, port->oob_size);
