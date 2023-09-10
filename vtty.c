@@ -450,7 +450,7 @@ static ssize_t vtmx_read (struct file *filp, char __user *ptr, size_t size, loff
 				size--;
 
 				if(tag == TAG_SET_TERMIOS) {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6,2,0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6,1,0)
 					copystatus = kernel_termios_to_user_termios((struct termios2 __user*)ptr, &port->oob_data.termios);
 #else
 #ifdef CONFIG_SPARC
