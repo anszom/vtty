@@ -1,0 +1,4 @@
+# master
+SUBSYSTEM=="misc", KERNEL=="vtmx", GROUP="dialout"
+# slaves
+SUBSYSTEM=="tty", KERNEL=="ttyV[0-9]*", GROUP="dialout"
