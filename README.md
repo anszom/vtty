@@ -14,6 +14,12 @@ Possible uses:
 - split one physical serial port in two, allowing two apps to access it without conflict (for example
   gdb & minicom, or esptool & minicom)
 
+Installation
+------------
+```
+sudo -E make modules_install
+sudo modprobe vtty
+```
 
 Userspace interface
 -------------------
