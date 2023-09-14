@@ -5,7 +5,7 @@ This kernel module allows userspace programs to create virtual serial ports unde
 
 This is somewhat similar to the regular pseudo-tty interface, but vtty also emulates characteristics
 such as baud rate & modem line state. This allows users to create a fully-functional serial port
-driver completely in userspace. 
+driver completely in userspace.
 
 Possible uses:
 - forward a serial port over the network. There are several Linux implementations of a RFC2217 server.
@@ -20,12 +20,12 @@ Userspace interface
 
 The module creates a **/dev/vtmx** "master" device, which is used to create the virtual serial ports in a
 manner similar to the pseudo-tty master device /dev/ptmx. Opening the **/dev/vtmx** device causes a
-**/dev/ttyV#** device to be allocated. The index of the virtual port can be obtained by issuing a 
-**VTMX_GET_VTTY_NUM** (equal to TIOCGPTN) ioctl on the vtmx file descriptor. 
+**/dev/ttyV#** device to be allocated. The index of the virtual port can be obtained by issuing a
+**VTMX_GET_VTTY_NUM** (equal to TIOCGPTN) ioctl on the vtmx file descriptor.
 
 Any writes on the vtmx file descriptor will appear as incoming data on the virtual TTY, subject to the
 regular in-kernel processing (line disciplines, echoing, and so on). Reading from vtmx will return data
-in a "packetized" format, inspired by the obscure pseudo-tty "packet" mode. On each successful read() call, 
+in a "packetized" format, inspired by the obscure pseudo-tty "packet" mode. On each successful read() call,
 the first byte returned will indicate the type of packet returned.
 
 Currently supported packet formats:
