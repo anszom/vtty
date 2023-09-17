@@ -17,7 +17,7 @@ Possible uses:
 Installation
 ------------
 ```
-sudo -E make modules_install
+sudo make modules_install
 sudo modprobe vtty
 ```
 
