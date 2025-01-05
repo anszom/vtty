@@ -684,7 +684,9 @@ static long vtmx_ioctl(struct file * filp, unsigned int cmd, unsigned long arg)
 
 static struct file_operations vtmx_fops = {
 	.owner 		= THIS_MODULE,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6,0,0)
 	.llseek		= no_llseek,
+#endif
 	.read		= vtmx_read,
 	.write		= vtmx_write,
 	.poll		= vtmx_poll,
