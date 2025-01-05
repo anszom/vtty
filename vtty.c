@@ -105,7 +105,11 @@ static void vtty_close(struct tty_struct *tty, struct file *filp)
 	return;
 }
 
+#if LINUX_VERSION_CODE > KERNEL_VERSION(6,6,0)
+static ssize_t vtty_write(struct tty_struct *tty, const u8 *buf, size_t count)
+#else
 static int vtty_write(struct tty_struct *tty, const unsigned char *buf, int count)
+#endif
 {
 	// the TTY layer manages -EAGAIN and (non-)blocking writes
 	struct vtty_port *port = &ports[tty->index];
